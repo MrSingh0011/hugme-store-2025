@@ -1,5 +1,5 @@
 'use client';
-import { createContext, useContext, useState, useCallback, ReactNode } from 'react';
+import { createContext, useContext, useState, useCallback, useEffect, ReactNode } from 'react';
 import { CartItem, CurrencyCode, CurrencyState, Product } from '@/types';
 import { CURRENCY_RATES } from '@/data/products';
 
@@ -15,18 +15,28 @@ interface StoreContextType {
   pdpProduct: Product | null;
   openPDP: (product: Product) => void;
   closePDP: () => void;
+  products: Product[];
+  productsLoading: boolean;
+  checkout: () => Promise<void>;
 }
 
 const StoreContext = createContext<StoreContextType | null>(null);
 
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [currency, setCurrencyState] = useState<CurrencyState>({ code: 'INR', symbol: '₹', flag: '🇮🇳' });
-  const [cart, setCart] = useState<CartItem[]>([
-    { product: { id: 1, name: 'Black Leather Jacket', sku: 'JK195', type: 'jacket', colors: ['#1a1a1a'], priceINR: 9999, priceMRP: 14999, badge: 'sale', emoji: 'JK', bg: '', sold: 30, viewing: 22 }, qty: 1, size: 'M' },
-    { product: { id: 2, name: 'Cognac Tote Bag', sku: 'BG041', type: 'bag', colors: ['#9b4826'], priceINR: 7499, priceMRP: 10999, badge: 'new', emoji: 'BG', bg: '', sold: 18, viewing: 14 }, qty: 1, size: '' },
-  ]);
+  const [cart, setCart] = useState<CartItem[]>([]);
   const [cartOpen, setCartOpen] = useState(false);
   const [pdpProduct, setPdpProduct] = useState<Product | null>(null);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [productsLoading, setProductsLoading] = useState(true);
+
+  useEffect(() => {
+    fetch('/api/products')
+      .then(r => r.json())
+      .then((data: Product[]) => setProducts(data))
+      .catch(() => import('@/data/products').then(m => setProducts(m.products)))
+      .finally(() => setProductsLoading(false));
+  }, []);
 
   const setCurrency = useCallback((code: CurrencyCode, symbol: string, flag: string) => {
     setCurrencyState({ code, symbol, flag });
@@ -58,8 +68,29 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const openPDP = useCallback((product: Product) => setPdpProduct(product), []);
   const closePDP = useCallback(() => setPdpProduct(null), []);
 
+  const checkout = useCallback(async () => {
+    const lines = cart
+      .filter(i => (i.product as Product & { shopifyId?: string }).shopifyId)
+      .map(i => ({
+        variantId: (i.product as Product & { shopifyId?: string }).shopifyId!,
+        quantity: i.qty,
+      }));
+
+    if (lines.length === 0) { toggleCart(); return; }
+
+    const locale = currency.code === 'INR' ? 'en-in' : 'en-us';
+    const res = await fetch('/api/cart', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lines, locale }),
+    });
+    const { checkoutUrl, error } = await res.json();
+    if (checkoutUrl) window.location.href = checkoutUrl;
+    else console.error('Checkout error:', error);
+  }, [cart, currency, toggleCart]);
+
   return (
-    <StoreContext.Provider value={{ currency, setCurrency, formatPrice, cart, addToCart, changeQty, cartOpen, toggleCart, pdpProduct, openPDP, closePDP }}>
+    <StoreContext.Provider value={{ currency, setCurrency, formatPrice, cart, addToCart, changeQty, cartOpen, toggleCart, pdpProduct, openPDP, closePDP, products, productsLoading, checkout }}>
       {children}
     </StoreContext.Provider>
   );

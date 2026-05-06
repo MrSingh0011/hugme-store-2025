@@ -1,11 +1,14 @@
 export interface Product {
   id: number;
+  shopifyId?: string;
+  handle?: string;
   name: string;
   sku: string;
   type: 'jacket' | 'bag' | 'accessory';
   colors: string[];
   priceINR: number;
   priceMRP: number;
+  priceUSD?: number;
   badge: 'sale' | 'new' | null;
   emoji: string;
   bg: string;
